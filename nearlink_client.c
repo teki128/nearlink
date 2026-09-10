@@ -10,6 +10,7 @@
 #include "sle_ssap_client.h"
 
 uint16_t conn_handle;
+uint16_t prop_handle;
 
 uint8_t client_id;
 
@@ -120,6 +121,15 @@ static void sle_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errco
         sle_remove_paired_remote_device(addr);
     }
     osal_printk("sle_pair_complete_cb: %d\r\n", status);
+}
+
+static void sle_exchange_info_cb(uint8_t client_id, uint16_t conn_id, ssap_exchange_info_t *param, errcode_t status)
+{
+    osal_printk("exchange mtu: %d, status: %d\r\n", param->mtu_size, status);
+
+    // MTU 协商完成，开始服务发现
+    ssapc_find_structure_param_t find = {.type = SSAP_FIND_TYPE_PROPERTY, .start_hdl = 1, .end_hdl = 0xFFFF};
+    ssapc_find_structure(client_id, conn_id, &find);
 }
 
 static int sle_client_task(void)
