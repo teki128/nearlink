@@ -1,4 +1,4 @@
-set(NEARLINK_ROLE "client")
+set(NEARLINK_ROLE "server")
 
 if("${NEARLINK_ROLE}" STREQUAL "server")
     set(SOURCES "${SOURCES}"
