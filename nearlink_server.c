@@ -69,6 +69,10 @@ static void sle_connect_state_changed_cb(uint16_t conn_id,
                                          sle_pair_state_t pair_state,
                                          sle_disc_reason_t disc_reason)
 {
+    unused(addr);
+    unused(pair_state);
+    unused(disc_reason);
+
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         conn_handle = conn_id;
         osal_printk("sle_connect_state_changed_cb: connected, conn_id=0x%02x\r\n", conn_id);
@@ -168,6 +172,7 @@ static errcode_t sle_server_task(void)
     ssaps_cbs.start_service_cb = sle_start_service_cb;
 
     sle_announce_seek_register_callbacks(&adv_cbs);
+    sle_connection_register_callbacks(&conn_cbs);
     ssaps_register_callbacks(&ssaps_cbs);
 
     errcode_t status = enable_sle(); // 使能SLE协议栈
@@ -196,7 +201,8 @@ static void sle_entry(void)
 {
     osal_task *task_handle = NULL;
     osal_kthread_lock();
-    task_handle = osal_kthread_create(sle_server_task, NULL, "sle_server_task", SLE_ENTRY_STACK_SIZE);
+    task_handle =
+        osal_kthread_create((osal_kthread_handler)sle_server_task, NULL, "sle_server_task", SLE_ENTRY_STACK_SIZE);
     if (task_handle != NULL) {
         osal_kthread_set_priority(task_handle, SLE_ENTRY_PRIORITY);
         osal_kfree(task_handle);
