@@ -9,6 +9,8 @@
 
 #define SLE_MTU_SIZE 512
 
+#define SLE_PROP_VALUE_MAX_LEN 32
+
 static const uint8_t SLE_SERVER_ADDR[SLE_ADDR_LEN] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
 static const uint8_t SLE_CLIENT_ADDR[SLE_ADDR_LEN] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
 

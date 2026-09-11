@@ -9,12 +9,17 @@
 #include "nearlink_common.h"
 #include "sle_ssap_client.h"
 
-uint16_t conn_handle;
 uint16_t prop_handle;
 
 uint8_t client_id;
+uint16_t g_conn_id;
 
 sle_addr_t server_addr;
+
+bool link_ready;
+static osal_task *communicate_task_handle = NULL;
+
+static int communicate_task(void);
 
 static void sle_start_scan(void)
 {
@@ -44,17 +49,17 @@ static void sle_enable_cb(errcode_t status)
     memcpy(addr.addr, SLE_CLIENT_ADDR, SLE_ADDR_LEN);
     sle_set_local_addr(&addr);
 
-    // 设置连接参数
-    sle_default_connect_param_t para = {.enable_filter_policy = 0,
-                                        .initiate_phys = 1,
-                                        .gt_negotiate = SLE_ANNOUNCE_ROLE_G_CAN_NEGO,
-                                        .scan_interval = 200,
-                                        .scan_window = 20,
-                                        .min_interval = SLE_CONN_INTERVAL,
-                                        .max_interval = SLE_CONN_INTERVAL,
-                                        .timeout = 500};
+    // // 设置连接参数
+    // sle_default_connect_param_t para = {.enable_filter_policy = 0,
+    //                                     .initiate_phys = 1,
+    //                                     .gt_negotiate = SLE_ANNOUNCE_ROLE_G_CAN_NEGO,
+    //                                     .scan_interval = 200,
+    //                                     .scan_window = 20,
+    //                                     .min_interval = SLE_CONN_INTERVAL,
+    //                                     .max_interval = SLE_CONN_INTERVAL,
+    //                                     .timeout = 500};
 
-    sle_default_connection_param_set(&para);
+    // sle_default_connection_param_set(&para);
 
     // 扫描server
     sle_start_scan();
@@ -92,7 +97,7 @@ static void sle_connect_state_changed_cb(uint16_t conn_id,
     unused(disc_reason);
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         osal_printk("sle_connect_state_changed_cb: connected, conn_id=0x%02x\r\n", conn_id);
-        conn_handle = conn_id;
+        g_conn_id = conn_id;
         // 首次连接尝试配对
         if (pair_state == SLE_PAIR_NONE) {
             osal_printk("start pairing...\r\n");
@@ -100,7 +105,8 @@ static void sle_connect_state_changed_cb(uint16_t conn_id,
         }
     } else if (conn_state == SLE_ACB_STATE_DISCONNECTED) {
         osal_printk("sle_connect_state_changed_cb: disconnected, restart scan\r\n");
-        conn_handle = 0;
+        g_conn_id = 0;
+        link_ready = false;
         sle_remove_paired_remote_device(&server_addr);
         sle_start_scan();
     }
@@ -108,9 +114,6 @@ static void sle_connect_state_changed_cb(uint16_t conn_id,
 
 static void sle_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status)
 {
-    unused(conn_id);
-    unused(addr);
-
     if (status == ERRCODE_SUCC) {
         // 设置MTU大小
         ssap_exchange_info_t para = {0};
@@ -139,7 +142,7 @@ static void sle_find_structure_cb(uint8_t client_id,
 {
     unused(client_id);
     unused(conn_id);
-    osal_printk("status=%d, find service start=0x%x, end=0x%x\r\n", status, service->start_hdl, service->end_hdl);
+    osal_printk("status=%d, found service start=0x%x, end=0x%x\r\n", status, service->start_hdl, service->end_hdl);
 }
 
 static void sle_find_property_cb(uint8_t client_id,
@@ -149,7 +152,7 @@ static void sle_find_property_cb(uint8_t client_id,
 {
     unused(client_id);
     unused(conn_id);
-    osal_printk("status=%d, find prop\r\n", status);
+    osal_printk("status=%d, found prop\r\n", status);
     if (status == ERRCODE_SUCC) {
         prop_handle = property->handle;
     }
@@ -160,7 +163,61 @@ static void sle_find_structure_cmp_cb(uint8_t client_id,
                                       ssapc_find_structure_result_t *result,
                                       errcode_t status)
 {
-    osal_printk("discovery complete\r\n");
+    unused(client_id);
+    unused(conn_id);
+    unused(result);
+    osal_printk("discovery complete, status: 0x%x\r\n", status);
+
+    // 创建通信线程
+    if (status == ERRCODE_SUCC) {
+        link_ready = true;
+        if (communicate_task_handle == NULL) {
+            osal_kthread_lock();
+            communicate_task_handle = osal_kthread_create((osal_kthread_handler)communicate_task, NULL,
+                                                          "sle_communicate", SLE_ENTRY_STACK_SIZE);
+            if (communicate_task_handle != NULL) {
+                osal_kthread_set_priority(communicate_task_handle, SLE_ENTRY_PRIORITY);
+                osal_kfree(communicate_task_handle);
+                communicate_task_handle = NULL;
+            }
+            osal_kthread_unlock();
+        }
+    }
+}
+
+static void sle_read_cfm_cb(uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *read_data, errcode_t status)
+{
+    unused(client_id);
+    unused(conn_id);
+    osal_printk("client read complete, status=0x%x, data=%s\r\n", status, read_data->data);
+}
+
+static void sle_write_cfm_cb(uint8_t client_id, uint16_t conn_id, ssapc_write_result_t *write_result, errcode_t status)
+{
+    unused(client_id);
+    unused(conn_id);
+    osal_printk("client write complete, status=0x%x, data=%s\r\n", status, write_result->data);
+}
+
+static void sle_ntf_cb(uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *data, errcode_t status)
+{
+    unused(client_id);
+    unused(conn_id);
+    osal_printk("receive notification, status=0x%x, data=%s\r\n", status, data->data);
+}
+
+// 读属性封装函数
+static void sle_read_prop(void)
+{
+    ssapc_read_req(client_id, g_conn_id, prop_handle, SSAP_PROPERTY_TYPE_VALUE); // 根据prop_handle读属性
+}
+
+// 写属性封装函数
+static void sle_write_prop(uint8_t *data, uint16_t data_len)
+{
+    ssapc_write_param_t param = {
+        .handle = prop_handle, .type = SSAP_PROPERTY_TYPE_VALUE, .data = data, .data_len = data_len};
+    ssapc_write_req(client_id, g_conn_id, &param); // 将参数写入param对应的prop中
 }
 
 static int sle_client_task(void)
@@ -180,12 +237,25 @@ static int sle_client_task(void)
     ssapc_cbs.find_structure_cb = sle_find_structure_cb;
     ssapc_cbs.ssapc_find_property_cbk = sle_find_property_cb;
     ssapc_cbs.find_structure_cmp_cb = sle_find_structure_cmp_cb;
+    ssapc_cbs.read_cfm_cb = sle_read_cfm_cb;
+    ssapc_cbs.write_cfm_cb = sle_write_cfm_cb;
+    ssapc_cbs.notification_cb = sle_ntf_cb;
 
     sle_announce_seek_register_callbacks(&seek_cbs);
     sle_connection_register_callbacks(&conn_cbs);
     ssapc_register_callbacks(&ssapc_cbs);
 
     enable_sle();
+    return 0;
+}
+
+// 通信线程
+static int communicate_task(void)
+{
+    sle_read_prop();
+    uint8_t data[] = "test";
+    sle_write_prop(data, 4);
+    sle_read_prop();
     return 0;
 }
 

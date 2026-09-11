@@ -13,6 +13,9 @@ uint16_t service_handle;
 uint16_t prop_handle;
 uint16_t conn_handle;
 
+uint8_t prop_value[SLE_PROP_VALUE_MAX_LEN] = "hello sle";
+uint8_t prop_len;
+
 uint8_t server_id;
 
 static errcode_t sle_start_service(void)
@@ -26,12 +29,13 @@ static errcode_t sle_start_service(void)
     ssaps_add_service_sync(server_id, &server_uuid, true, &service_handle);
 
     // 添加service内的property
-    uint8_t prop_value[] = "hello sle";
+    prop_len = sizeof(prop_value) - 1;
     ssaps_property_info_t prop = {.uuid = {.uuid = {0x02, 0xA0}, .len = 2},
                                   .permissions = SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE,
-                                  .operate_indication =
-                                      SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_NOTIFY,
-                                  .value_len = sizeof(prop_value) - 1,
+                                  .operate_indication = SSAP_OPERATE_INDICATION_BIT_READ |
+                                                        SSAP_OPERATE_INDICATION_BIT_WRITE |
+                                                        SSAP_OPERATE_INDICATION_BIT_NOTIFY,
+                                  .value_len = prop_len,
                                   .value = prop_value};
     ssaps_add_property_sync(server_id, service_handle, &prop, &prop_handle);
 
@@ -100,11 +104,60 @@ static void sle_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errco
     osal_printk("sle_pair_complete_cb: %d\r\n", status);
 }
 
+// 收到client的读属性req，发送resp
+static void sle_read_request_cb(uint8_t server_id,
+                                uint16_t conn_id,
+                                ssaps_req_read_cb_t *read_cb_para,
+                                errcode_t status)
+{
+    unused(status);
+    ssaps_send_rsp_t rsp = {0};
+    rsp.request_id = read_cb_para->request_id;
+    rsp.status = 0;
+    rsp.value_len = prop_len;
+    rsp.value = prop_value; // 直接返回属性值
+
+    ssaps_send_response(server_id, conn_id, &rsp);
+}
+
+// 收到client的写属性req，发送resp
+static void sle_write_request_cb(uint8_t server_id,
+                                 uint16_t conn_id,
+                                 ssaps_req_write_cb_t *write_cb_para,
+                                 errcode_t status)
+{
+    unused(status);
+    osal_printk("write req: len=%d\r\n", write_cb_para->length);
+
+    // 修改prop值
+    if (write_cb_para->length <= SLE_PROP_VALUE_MAX_LEN) {
+        if (memcpy_s(prop_value, SLE_PROP_VALUE_MAX_LEN, write_cb_para->value, write_cb_para->length) == EOK) {
+            prop_len = write_cb_para->length;
+        }
+    }
+
+    // req要求必须回复
+    if (write_cb_para->need_rsp == true) {
+        uint8_t rsp_value[] = "OK!";
+        ssaps_send_rsp_t rsp = {
+            .request_id = write_cb_para->request_id, .status = 0, .value = rsp_value, .value_len = 3};
+        ssaps_send_response(server_id, conn_id, &rsp);
+    }
+
+    // 将新值notify给client
+    ssaps_ntf_ind_t ntf = {0};
+    ntf.handle = prop_handle;
+    ntf.type = SSAP_PROPERTY_TYPE_VALUE;
+    ntf.value_len = prop_len;
+    ntf.value = prop_value;
+    ssaps_notify_indicate(server_id, conn_id, &ntf);
+}
+
 static errcode_t sle_init_adv(void)
 {
     sle_announce_param_t param = {0}; // 广播参数
     param.announce_mode = SLE_ANNOUNCE_MODE_CONNECTABLE_SCANABLE;
-    param.announce_handle = 1; // 只用1个服务，分配1个句柄
+    param.announce_handle = 1; // 只用1路广播，自分配句柄1
     param.announce_gt_role = SLE_ANNOUNCE_ROLE_T_CAN_NEGO;
     param.announce_level = SLE_ANNOUNCE_LEVEL_NORMAL;
     param.announce_channel_map = SLE_ADV_CHANNEL_MAP_DEFAULT;
@@ -162,13 +215,14 @@ static errcode_t sle_server_task(void)
     sle_connection_callbacks_t conn_cbs = {0};
     ssaps_callbacks_t ssaps_cbs = {0};
 
-    // adv_cbs.sle_enable_cb = sle_enable_cb;
     adv_cbs.announce_enable_cb = sle_announce_enable_cb;
 
     conn_cbs.connect_state_changed_cb = sle_connect_state_changed_cb;
     conn_cbs.pair_complete_cb = sle_pair_complete_cb;
 
     ssaps_cbs.start_service_cb = sle_start_service_cb;
+    ssaps_cbs.read_request_cb = sle_read_request_cb;
+    ssaps_cbs.write_request_cb = sle_write_request_cb;
 
     sle_announce_seek_register_callbacks(&adv_cbs);
     sle_connection_register_callbacks(&conn_cbs);
