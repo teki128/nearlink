@@ -94,7 +94,6 @@ static void sle_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errco
         para.mtu_size = SLE_MTU_SIZE;
         para.version = 1;
         ssaps_set_info(server_id, &para);
-        return;
     } else {
         sle_remove_paired_remote_device(addr);
     }

@@ -127,15 +127,47 @@ static void sle_exchange_info_cb(uint8_t client_id, uint16_t conn_id, ssap_excha
 {
     osal_printk("exchange mtu: %d, status: %d\r\n", param->mtu_size, status);
 
-    // MTU 协商完成，开始服务发现
+    // mtu协商完成，开始服务与属性发现
     ssapc_find_structure_param_t find = {.type = SSAP_FIND_TYPE_PROPERTY, .start_hdl = 1, .end_hdl = 0xFFFF};
     ssapc_find_structure(client_id, conn_id, &find);
+}
+
+static void sle_find_structure_cb(uint8_t client_id,
+                                  uint16_t conn_id,
+                                  ssapc_find_service_result_t *service,
+                                  errcode_t status)
+{
+    unused(client_id);
+    unused(conn_id);
+    osal_printk("status=%d, find service start=0x%x, end=0x%x\r\n", status, service->start_hdl, service->end_hdl);
+}
+
+static void sle_find_property_cb(uint8_t client_id,
+                                 uint16_t conn_id,
+                                 ssapc_find_property_result_t *property,
+                                 errcode_t status)
+{
+    unused(client_id);
+    unused(conn_id);
+    osal_printk("status=%d, find prop\r\n", status);
+    if (status == ERRCODE_SUCC) {
+        prop_handle = property->handle;
+    }
+}
+
+static void sle_find_structure_cmp_cb(uint8_t client_id,
+                                      uint16_t conn_id,
+                                      ssapc_find_structure_result_t *result,
+                                      errcode_t status)
+{
+    osal_printk("discovery complete\r\n");
 }
 
 static int sle_client_task(void)
 {
     sle_announce_seek_callbacks_t seek_cbs = {0};
     sle_connection_callbacks_t conn_cbs = {0};
+    ssapc_callbacks_t ssapc_cbs = {0};
 
     seek_cbs.sle_enable_cb = sle_enable_cb;
     seek_cbs.seek_result_cb = sle_seek_result_cb;
@@ -144,8 +176,14 @@ static int sle_client_task(void)
     conn_cbs.connect_state_changed_cb = sle_connect_state_changed_cb;
     conn_cbs.pair_complete_cb = sle_pair_complete_cb;
 
+    ssapc_cbs.exchange_info_cb = sle_exchange_info_cb;
+    ssapc_cbs.find_structure_cb = sle_find_structure_cb;
+    ssapc_cbs.ssapc_find_property_cbk = sle_find_property_cb;
+    ssapc_cbs.find_structure_cmp_cb = sle_find_structure_cmp_cb;
+
     sle_announce_seek_register_callbacks(&seek_cbs);
     sle_connection_register_callbacks(&conn_cbs);
+    ssapc_register_callbacks(&ssapc_cbs);
 
     enable_sle();
     return 0;
