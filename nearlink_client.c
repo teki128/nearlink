@@ -49,17 +49,17 @@ static void sle_enable_cb(errcode_t status)
     memcpy(addr.addr, SLE_CLIENT_ADDR, SLE_ADDR_LEN);
     sle_set_local_addr(&addr);
 
-    // // 设置连接参数
-    // sle_default_connect_param_t para = {.enable_filter_policy = 0,
-    //                                     .initiate_phys = 1,
-    //                                     .gt_negotiate = SLE_ANNOUNCE_ROLE_G_CAN_NEGO,
-    //                                     .scan_interval = 200,
-    //                                     .scan_window = 20,
-    //                                     .min_interval = SLE_CONN_INTERVAL,
-    //                                     .max_interval = SLE_CONN_INTERVAL,
-    //                                     .timeout = 500};
+    // 设置连接参数
+    sle_default_connect_param_t para = {.enable_filter_policy = 0,
+                                        .initiate_phys = 1,
+                                        .gt_negotiate = SLE_ANNOUNCE_ROLE_G_CAN_NEGO,
+                                        .scan_interval = 200,
+                                        .scan_window = 20,
+                                        .min_interval = SLE_CONN_INTERVAL,
+                                        .max_interval = SLE_CONN_INTERVAL,
+                                        .timeout = 500};
 
-    // sle_default_connection_param_set(&para);
+    sle_default_connection_param_set(&para);
 
     // 扫描server
     sle_start_scan();
@@ -252,10 +252,11 @@ static int sle_client_task(void)
 // 通信线程
 static int communicate_task(void)
 {
-    sle_read_prop();
-    uint8_t data[] = "test";
-    sle_write_prop(data, 4);
-    sle_read_prop();
+    while (1) {
+        sle_read_prop();
+        uint8_t data[] = "test";
+        sle_write_prop(data, 4);
+    }
     return 0;
 }
 
