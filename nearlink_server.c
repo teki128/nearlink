@@ -11,7 +11,7 @@
 
 uint16_t service_handle;
 uint16_t prop_handle;
-uint16_t conn_handle;
+uint16_t g_conn_id;
 
 uint8_t prop_value[SLE_PROP_VALUE_MAX_LEN] = "hello sle";
 uint8_t prop_len;
@@ -29,7 +29,7 @@ static errcode_t sle_start_service(void)
     ssaps_add_service_sync(server_id, &server_uuid, true, &service_handle);
 
     // 添加service内的property
-    prop_len = sizeof(prop_value) - 1;
+    prop_len = sizeof("hello sle") - 1;
     ssaps_property_info_t prop = {.uuid = {.uuid = {0x02, 0xA0}, .len = 2},
                                   .permissions = SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE,
                                   .operate_indication = SSAP_OPERATE_INDICATION_BIT_READ |
@@ -58,13 +58,13 @@ static void sle_start_service_cb(uint8_t server_id, uint16_t handle, errcode_t s
 {
     unused(server_id);
     unused(handle);
-    osal_printk("sle_start_service_cb: %d\r\n", status);
+    osal_printk("sle_start_service_cb stauts=0x%x\r\n", status);
 }
 
 static void sle_announce_enable_cb(uint32_t announce_id, errcode_t status)
 {
     unused(announce_id);
-    osal_printk("sle_announce_enable_cb: %d\r\n", status);
+    osal_printk("sle_announce_enable_cb status=0x%x\r\n", status);
 }
 
 static void sle_connect_state_changed_cb(uint16_t conn_id,
@@ -78,11 +78,11 @@ static void sle_connect_state_changed_cb(uint16_t conn_id,
     unused(disc_reason);
 
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
-        conn_handle = conn_id;
+        g_conn_id = conn_id;
         osal_printk("sle_connect_state_changed_cb: connected, conn_id=0x%02x\r\n", conn_id);
     } else if (conn_state == SLE_ACB_STATE_DISCONNECTED) {
         osal_printk("sle_connect_state_changed_cb: disconnected, restart announce\r\n");
-        conn_handle = 0;
+        g_conn_id = 0;
         sle_start_announce(1);
     }
 }
@@ -101,7 +101,7 @@ static void sle_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errco
     } else {
         sle_remove_paired_remote_device(addr);
     }
-    osal_printk("sle_pair_complete_cb: %d\r\n", status);
+    osal_printk("sle_pair_complete_cb status=0x%x\r\n", status);
 }
 
 // 收到client的读属性req，发送resp
@@ -127,13 +127,12 @@ static void sle_write_request_cb(uint8_t server_id,
                                  errcode_t status)
 {
     unused(status);
-    osal_printk("write req: len=%d\r\n", write_cb_para->length);
+    osal_printk("write req: len=%d, value=%s\r\n", write_cb_para->length, write_cb_para->value);
 
     // 修改prop值
     if (write_cb_para->length <= SLE_PROP_VALUE_MAX_LEN) {
-        if (memcpy_s(prop_value, SLE_PROP_VALUE_MAX_LEN, write_cb_para->value, write_cb_para->length) == EOK) {
-            prop_len = write_cb_para->length;
-        }
+        memcpy(prop_value, write_cb_para->value, write_cb_para->length);
+        prop_len = write_cb_para->length;
     }
 
     // req要求必须回复
@@ -230,7 +229,7 @@ static errcode_t sle_server_task(void)
 
     errcode_t status = enable_sle(); // 使能SLE协议栈
     if (status != ERRCODE_SUCC) {
-        osal_printk("enable_sle failed: %d\r\n", status);
+        osal_printk("enable_sle failed status=0x%x\r\n", status);
         return status;
     }
 

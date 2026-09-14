@@ -62,6 +62,7 @@ static void sle_enable_cb(errcode_t status)
     sle_default_connection_param_set(&para);
 
     // 扫描server
+    osal_printk("This is client.\r\n");
     sle_start_scan();
 }
 
@@ -123,12 +124,12 @@ static void sle_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errco
     } else {
         sle_remove_paired_remote_device(addr);
     }
-    osal_printk("sle_pair_complete_cb: %d\r\n", status);
+    osal_printk("sle_pair_complete_cb status=0x%x\r\n", status);
 }
 
 static void sle_exchange_info_cb(uint8_t client_id, uint16_t conn_id, ssap_exchange_info_t *param, errcode_t status)
 {
-    osal_printk("exchange mtu: %d, status: %d\r\n", param->mtu_size, status);
+    osal_printk("exchange mtu=%d, status=0x%x\r\n", param->mtu_size, status);
 
     // mtu协商完成，开始服务与属性发现
     ssapc_find_structure_param_t find = {.type = SSAP_FIND_TYPE_PROPERTY, .start_hdl = 1, .end_hdl = 0xFFFF};
@@ -142,7 +143,7 @@ static void sle_find_structure_cb(uint8_t client_id,
 {
     unused(client_id);
     unused(conn_id);
-    osal_printk("status=%d, found service start=0x%x, end=0x%x\r\n", status, service->start_hdl, service->end_hdl);
+    osal_printk("status=0x%x, found service start=0x%x, end=0x%x\r\n", status, service->start_hdl, service->end_hdl);
 }
 
 static void sle_find_property_cb(uint8_t client_id,
@@ -152,7 +153,7 @@ static void sle_find_property_cb(uint8_t client_id,
 {
     unused(client_id);
     unused(conn_id);
-    osal_printk("status=%d, found prop\r\n", status);
+    osal_printk("status=0x%x, found prop\r\n", status);
     if (status == ERRCODE_SUCC) {
         prop_handle = property->handle;
     }
@@ -166,7 +167,7 @@ static void sle_find_structure_cmp_cb(uint8_t client_id,
     unused(client_id);
     unused(conn_id);
     unused(result);
-    osal_printk("discovery complete, status: 0x%x\r\n", status);
+    osal_printk("discovery complete, status=0x%x\r\n", status);
 
     // 创建通信线程
     if (status == ERRCODE_SUCC) {
@@ -255,8 +256,9 @@ static int communicate_task(void)
     while (1) {
         sle_read_prop();
         uint8_t data[] = "test";
-        sle_write_prop(data, 4);
-    }
+        sle_write_prop(data, sizeof(data) - 1); // 字符串输出以'\0'结尾
+        osal_msleep(2000);                      // 间隔2s发req，防止内存耗尽
+    } // TODO: 可以把请求序号加进去
     return 0;
 }
 
