@@ -16,7 +16,6 @@ uint16_t g_conn_id;
 
 sle_addr_t server_addr;
 
-bool link_ready;
 static osal_task *communicate_task_handle = NULL;
 
 static int communicate_task(void);
@@ -107,7 +106,6 @@ static void sle_connect_state_changed_cb(uint16_t conn_id,
     } else if (conn_state == SLE_ACB_STATE_DISCONNECTED) {
         osal_printk("sle_connect_state_changed_cb: disconnected, restart scan\r\n");
         g_conn_id = 0;
-        link_ready = false;
         sle_remove_paired_remote_device(&server_addr);
         sle_start_scan();
     }
@@ -171,7 +169,6 @@ static void sle_find_structure_cmp_cb(uint8_t client_id,
 
     // 创建通信线程
     if (status == ERRCODE_SUCC) {
-        link_ready = true;
         if (communicate_task_handle == NULL) {
             osal_kthread_lock();
             communicate_task_handle = osal_kthread_create((osal_kthread_handler)communicate_task, NULL,
